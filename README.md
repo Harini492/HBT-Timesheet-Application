@@ -432,5 +432,5 @@ section instead of silently patching and hoping nothing else breaks.
 
 ---
 
-Made with ❤️ by Harini Renu
+Made with ❤️ by Harini R
 ⚡ Turning employee hours into organized, validated, and trackable timesheets
