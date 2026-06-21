@@ -1,0 +1,36 @@
+# HBT Timesheet Management System — local Docker orchestration.
+#
+# Backend: Node/Express API on :4000, SQLite persisted via a named volume.
+# Frontend: Flutter WEB build served by nginx on :8080 (mobile/desktop
+# targets are not containerized — run them locally with `flutter run`).
+#
+# Usage: docker compose up --build
+
+services:
+  backend:
+    build: ./backend
+    container_name: hbt-timesheet-backend
+    ports:
+      - "4000:4000"
+    environment:
+      - PORT=4000
+      - NODE_ENV=production
+      - JWT_SECRET=change_this_to_a_long_random_secret_in_production
+      - JWT_EXPIRES_IN=8h
+      - DB_PATH=/app/data/timesheet.db
+      - CORS_ORIGIN=http://localhost:8080
+    volumes:
+      - hbt-db-data:/app/data
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    container_name: hbt-timesheet-frontend
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  hbt-db-data:

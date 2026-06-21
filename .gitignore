@@ -1,0 +1,7 @@
+backend/node_modules/
+backend/data/*.db*
+backend/.env
+frontend/build/
+frontend/.dart_tool/
+*.log
+.DS_Store
