@@ -1,244 +1,341 @@
-# HBT Timesheet Management System
+# 🗓️ HBT Timesheet Management System
 
-A full-stack employee timesheet application built for the HBT Group Technical Assessment.
-
-**Stack:** Flutter · Node.js / Express · SQLite · JWT Auth · Docker
+A full-stack **Timesheet Management Application** built for HBT Group (HBT Engineering Pvt. Limited), enabling employees to log weekly work hours against assigned jobs and allowing admins to manage employees, jobs, holidays, and generate reports.
 
 ---
 
-## Table of Contents
+## 📋 Table of Contents
 
-1. [Project Structure](#1-project-structure)
-2. [Quick Start](#2-quick-start)
-3. [Architecture & Design Decisions](#3-architecture--design-decisions)
-4. [Database Schema](#4-database-schema)
-5. [API Reference](#5-api-reference)
-6. [Features Implemented](#6-features-implemented)
-7. [Assumptions](#7-assumptions)
+- [Tech Stack](#-tech-stack)
+- [Features](#-features)
+- [Architecture & Assumptions](#-architecture--assumptions)
+- [Folder Structure](#-folder-structure)
+- [Setup & Installation](#-setup--installation)
+  - [Prerequisites](#prerequisites)
+  - [Backend Setup](#backend-setup)
+  - [Frontend Setup](#frontend-setup)
+  - [Docker Setup (Optional)](#docker-setup-optional)
+- [Default Credentials](#-default-credentials)
+- [API Overview](#-api-overview)
+- [Database Schema](#-database-schema)
 
 ---
 
-## 1. Project Structure
+## 🛠️ Tech Stack
+
+| Layer     | Technology                                                     |
+|-----------|----------------------------------------------------------------|
+| Frontend  | Flutter (Dart) · flutter_riverpod · go_router · dio           |
+| Backend   | Node.js · Express.js                                          |
+| Database  | SQLite (via `better-sqlite3`)                                 |
+| Auth      | JWT (JSON Web Tokens) · bcryptjs · Session tracking           |
+| Export    | Excel (.xlsx) via `excel` Flutter package                     |
+| DevOps    | Docker · Docker Compose                                       |
+
+---
+
+## ✨ Features
+
+**Employee**
+- Login with Employee Code and password
+- View and log hours in a weekly timesheet grid (Mon–Sun)
+- Add or remove job rows from assigned jobs only
+- View absence/holiday calendar
+- Change password
+- Export monthly timesheet report to Excel
+
+**Admin**
+- Admin dashboard with summary stats
+- Manage employees (create, edit, deactivate)
+- Manage jobs (create, edit, toggle active)
+- Manage public holidays
+- View reports across employees
+- Full access to all timesheet data
+
+---
+
+## 🏗️ Architecture & Assumptions
+
+### Architecture
 
 ```
-Timesheet-app/
+┌─────────────────────────────────────────────────────────┐
+│                     Flutter Frontend                     │
+│  go_router (navigation) + flutter_riverpod (state)      │
+│  dio (HTTP client) + flutter_secure_storage (JWT)       │
+└─────────────────────┬───────────────────────────────────┘
+                      │  REST API (HTTP/JSON)
+                      │  Base URL: http://localhost:4000
+                      ▼
+┌─────────────────────────────────────────────────────────┐
+│              Node.js / Express Backend                   │
+│  Modular structure: auth · employees · jobs ·           │
+│  timesheet · reports · holidays · dashboard · week      │
+│  Middleware: JWT auth · Helmet · CORS · Morgan          │
+└─────────────────────┬───────────────────────────────────┘
+                      │
+                      ▼
+┌─────────────────────────────────────────────────────────┐
+│              SQLite Database (better-sqlite3)            │
+│  File-based · Persisted via Docker volume or local path │
+└─────────────────────────────────────────────────────────┘
+```
+
+### Key Assumptions
+
+- **Week starts on Monday.** All timesheet weeks are anchored to the Monday of the selected week.
+- **Hours are numeric (decimal).** E.g., `7.5` for 7 hours 30 minutes. Max 24h per day per job.
+- **Employees can only log hours against jobs assigned to them** by an admin.
+- **JWT tokens expire after 8 hours.** Sessions are tracked server-side; logout invalidates the session.
+- **One timesheet record per employee per week.** Saving is an upsert — re-submitting the same week overwrites existing entries.
+- **SQLite is sufficient** for the expected single-team scale; no connection pool or replication is required.
+- **Flutter Web** is the primary deployment target (served via nginx in Docker). Native mobile/desktop builds are supported but not containerized.
+- **Admin role** is set at account creation and cannot be self-assigned.
+- **Holidays are global** (not per-employee) and are used to mark non-working days in the timesheet calendar view.
+
+---
+
+## 📁 Folder Structure
+
+```
+Timesheet-app-main/
+├── docker-compose.yml              # Orchestrates backend + frontend containers
+│
 ├── backend/
-│   ├── src/
-│   │   ├── config/          # DB connection (better-sqlite3)
-│   │   ├── db/              # schema.sql · migrate.js · seed.js
-│   │   ├── middleware/      # JWT auth · error handler · request validator
-│   │   ├── modules/
-│   │   │   ├── auth/        # login · logout · change-password · /me
-│   │   │   ├── employees/   # CRUD + job assignment (admin-only)
-│   │   │   ├── jobs/        # CRUD (admin-only write; employees read own jobs)
-│   │   │   ├── timesheet/   # weekly upsert · GET · DELETE
-│   │   │   ├── week/        # GET /week/:date — enriched week metadata
-│   │   │   ├── reports/     # monthly hours · absence tracking
-│   │   │   ├── holidays/    # CRUD public holidays
-│   │   │   └── dashboard/   # admin summary (headcount + hours)
-│   │   └── utils/           # JWT helpers · bcrypt · date utilities
-│   ├── tests/               # node:test unit tests
-│   └── Dockerfile
-├── frontend/
-│   ├── lib/
-│   │   ├── core/            # theme · router · Dio client · token storage · shared widgets
-│   │   └── features/
-│   │       ├── auth/        # login screen · change-password dialog
-│   │       ├── dashboard/   # responsive shell · sidebar · top bar
-│   │       ├── timesheet/   # weekly grid · row widget · job picker
-│   │       ├── report/      # monthly report · Excel export
-│   │       ├── absences/    # absence list screen
-│   │       ├── holidays/    # holidays screen
-│   │       └── admin/       # dashboard · employees · jobs (admin-only)
-│   ├── test/                # Flutter unit + widget tests
-│   └── Dockerfile
-└── docker-compose.yml
+│   ├── Dockerfile
+│   ├── package.json
+│   ├── .env.example                # Environment variable template
+│   └── src/
+│       ├── server.js               # Entry point — starts HTTP server
+│       ├── app.js                  # Express app setup, middleware, route mounting
+│       ├── config/
+│       │   └── database.js         # SQLite connection (better-sqlite3)
+│       ├── db/
+│       │   ├── schema.sql          # Table definitions and indexes
+│       │   ├── migrate.js          # Runs schema.sql on startup
+│       │   └── seed.js             # Seeds default admin, employees, and jobs
+│       ├── middleware/
+│       │   ├── auth.js             # JWT verification middleware
+│       │   ├── errorHandler.js     # Global error handler + AppError class
+│       │   └── validate.js         # express-validator result checker
+│       ├── modules/                # Feature modules (controller · service · routes)
+│       │   ├── auth/
+│       │   ├── employees/
+│       │   ├── jobs/
+│       │   ├── timesheet/
+│       │   ├── week/
+│       │   ├── reports/
+│       │   ├── holidays/
+│       │   └── dashboard/
+│       ├── utils/
+│       │   ├── dateUtils.js        # Week boundary calculations, ISO date helpers
+│       │   ├── jwt.js              # Sign, verify, hash token utilities
+│       │   └── password.js         # bcrypt hash and verify
+│       └── tests/
+│           ├── dateUtils.test.js
+│           ├── password.test.js
+│           └── timesheet.service.test.js
+│
+└── frontend/
+    ├── Dockerfile
+    ├── pubspec.yaml                # Flutter dependencies
+    └── lib/
+        ├── main.dart               # App entry point — ProviderScope + MaterialApp
+        ├── core/
+        │   ├── config/             # API base URL, app-wide constants
+        │   ├── errors/             # Custom exception classes
+        │   ├── models/             # Shared models (UserModel)
+        │   ├── network/            # Dio client with JWT interceptor
+        │   ├── providers/          # Core Riverpod providers (auth, router)
+        │   ├── router/             # go_router route definitions + guards
+        │   ├── storage/            # flutter_secure_storage wrapper (token)
+        │   ├── theme/              # App colors, text styles, Material theme
+        │   └── widgets/            # Reusable widgets (button, text field, etc.)
+        └── features/
+            ├── auth/               # Login screen, auth state, auth notifier
+            ├── dashboard/          # Shell layout, sidebar, top bar
+            ├── timesheet/          # Weekly grid, row widget, add-job picker
+            ├── absences/           # Absence / holiday calendar view
+            ├── report/             # Monthly report screen + Excel exporter
+            ├── holidays/           # Holiday management screen
+            └── admin/
+                ├── dashboard/      # Admin stats dashboard
+                ├── employees/      # Employee management CRUD
+                └── jobs/           # Job management CRUD
 ```
 
 ---
 
-## 2. Quick Start
+## 🚀 Setup & Installation
 
 ### Prerequisites
 
-- Node.js ≥ 18
-- Flutter SDK ≥ 3.3.0
-- (Optional) Docker + Docker Compose
+Make sure the following are installed on your machine:
+
+| Tool           | Version      |
+|----------------|--------------|
+| Node.js        | ≥ 18.0.0     |
+| npm            | ≥ 9.x        |
+| Flutter SDK    | ≥ 3.3.0      |
+| Dart SDK       | ≥ 3.3.0      |
+| Docker         | ≥ 24.x *(optional)* |
 
 ---
 
-### Backend
+### Backend Setup
 
 ```bash
+# 1. Navigate to the backend directory
 cd backend
+
+# 2. Install dependencies
 npm install
-cp .env.example .env        # Edit JWT_SECRET if desired
-npm run setup               # Runs migrations + seeds demo data
-npm run dev                 # Starts on http://localhost:4000
+
+# 3. Create your environment file
+cp .env.example .env
 ```
 
-Health check: `GET http://localhost:4000/health`
+Edit `.env` with your configuration:
+
+```env
+PORT=4000
+NODE_ENV=development
+JWT_SECRET=your_long_random_secret_here
+JWT_EXPIRES_IN=8h
+DB_PATH=./data/timesheet.db
+CORS_ORIGIN=http://localhost:3000
+```
+
+```bash
+# 4. Run database migration and seed default data
+npm run setup
+
+# 5. Start the development server
+npm run dev
+```
+
+> The backend will be running at **http://localhost:4000**
+>
+> Health check: `GET http://localhost:4000/health`
 
 ---
 
-### Frontend
+### Frontend Setup
 
 ```bash
+# 1. Navigate to the frontend directory
 cd frontend
+
+# 2. Get Flutter packages
 flutter pub get
 
-# Android emulator (default baseUrl targets 10.0.2.2:4000):
-flutter run
-
-# Web / Desktop:
-flutter run -d chrome --dart-define=API_BASE_URL=http://localhost:4000
-
-# iOS Simulator:
-flutter run --dart-define=API_BASE_URL=http://localhost:4000
+# 3. Verify the API base URL matches your backend
+# Edit: lib/core/config/api_constants.dart
+# Default: http://localhost:4000
 ```
+
+**Run on Web (recommended):**
+```bash
+flutter run -d chrome
+```
+
+**Run on Android/Desktop:**
+```bash
+flutter run                   # select device from list
+flutter run -d windows        # Windows desktop
+flutter run -d android        # Android device/emulator
+```
+
+> The Flutter web app will open at **http://localhost:3000** (or the port Flutter assigns)
 
 ---
 
-### Docker (Backend + Web Frontend together)
+### Docker Setup (Optional)
+
+To run the entire stack with Docker Compose:
 
 ```bash
+# From the project root
 docker compose up --build
-# API  → http://localhost:4000
-# Web  → http://localhost:8080
 ```
 
-> Docker only builds the **web** target for Flutter. For Android/iOS, run `flutter run` locally pointing at the backend (dockerized or local).
+| Service  | URL                      |
+|----------|--------------------------|
+| Backend  | http://localhost:4000    |
+| Frontend | http://localhost:8080    |
 
----
+> **Note:** The Docker setup serves the Flutter **web** build via nginx. For native mobile/desktop targets, run Flutter locally as described above.
 
-### Demo Credentials (seeded automatically)
-
-| Role     | Employee ID | Password     |
-|----------|-------------|--------------|
-| Admin    | ADMIN001    | Admin@123    |
-| Employee | EMP1001     | Employee@123 |
-| Employee | EMP1002     | Employee@123 |
-| Employee | EMP1003     | Employee@123 |
-
----
-
-## 3. Architecture & Design Decisions
-
-### Backend
-
-Follows a **layered module structure**: `routes → controller → service → DB` — each feature owns its own validation, business rules, and SQL queries. Cross-cutting concerns (auth, error formatting, request validation) live in `middleware/`.
-
-**Key decisions:**
-
-- **Session-backed JWT auth:** Tokens are signed JWTs, but each login also inserts a session row (storing a SHA-256 hash of the token, not the raw token). Logout invalidates the session immediately — the token is unusable even before its expiry. This avoids the stateless-JWT pitfall where a stolen token works until expiry.
-
-- **Idempotent timesheet upsert:** `POST /timesheet` and `PUT /timesheet` are semantically identical — both do a full-week upsert keyed on `(timesheet_id, job_id, entry_date)`. Re-saving the same week updates existing rows; it never duplicates them.
-
-- **Three-layer validation:** DB-level `CHECK (hours BETWEEN 0 AND 24)`, request-level `express-validator` schemas, and service-level checks (employees can only log hours against jobs explicitly assigned to them by an admin).
-
-- **`login_time` timezone fix:** SQLite stores timestamps via `datetime('now')` in UTC. The dashboard's present/absent query uses `strftime('%Y-%m-%d', login_time, 'localtime')` to convert to local time before comparing with today's date, preventing a timezone mismatch (relevant for IST = UTC+5:30).
-
-### Frontend
-
-Uses a **feature-first folder structure** (`features/<name>/{data, domain, presentation}`), Riverpod `StateNotifierProvider`s for screen state, and Go Router with an auth-aware `redirect` callback.
-
-**Key decisions:**
-
-- **`PageHeader` is a plain widget, not `Scaffold.appBar`:** Each screen needs different trailing controls (Save + week nav on Timesheet, month nav on Report, Add button on Jobs/Employees). Making `PageHeader` a standalone widget lets every screen inject its own actions while sharing one consistent navy bar.
-
-- **Responsive shell:** Permanent sidebar on screens ≥ 900 px; a `Drawer` on narrower viewports. Same nav content either way — one `Sidebar` widget handles both.
-
-- **Absence detection logic:** Only past weekdays with zero logged hours count as an absence. Weekends, public holidays, today, and future dates are all excluded.
-
----
-
-## 4. Database Schema
-
-```sql
-employees        (id, employee_code, name, email, password_hash, role, is_active, ...)
-jobs             (id, job_code, job_description, is_active, ...)
-employee_jobs    (id, employee_id → employees, job_id → jobs)          -- many-to-many
-timesheets       (id, employee_id → employees, week_start_date, ...)   -- one per employee per week
-timesheet_entries(id, timesheet_id → timesheets, job_id → jobs,
-                  entry_date, hours CHECK(0..24), comment, ...)
-holidays         (id, holiday_date UNIQUE, name, ...)
-sessions         (id, employee_id → employees, token_hash,
-                  login_time, logout_time, expires_at, is_active)
+To stop and remove containers:
+```bash
+docker compose down
 ```
 
-Indexes on: `timesheet_entries(entry_date)`, `timesheets(employee_id, week_start_date)`, `sessions(token_hash)`.
+To reset the database volume:
+```bash
+docker compose down -v
+```
 
 ---
 
-## 5. API Reference
+## 🔑 Default Credentials
 
-All endpoints except `POST /auth/login` and `GET /health` require:
-`Authorization: Bearer <token>`
+After running `npm run setup` (or Docker first boot), the following accounts are seeded:
 
-| Method | Endpoint | Auth | Description |
-|--------|----------|------|-------------|
-| POST | `/auth/login` | — | `{ employeeCode, password }` → `{ token, user }` |
-| POST | `/auth/logout` | Employee | Invalidates current session |
-| POST | `/auth/change-password` | Employee | Change own password |
-| GET | `/auth/me` | Employee | Current user profile |
-| GET | `/jobs` | Employee | Own assigned jobs / all jobs (admin) |
-| POST | `/jobs` | Admin | Create job |
-| PUT | `/jobs/:id` | Admin | Update job |
-| DELETE | `/jobs/:id` | Admin | Delete job |
-| GET | `/employees` | Admin | List all employees |
-| POST | `/employees` | Admin | Create employee |
-| PUT | `/employees/:id` | Admin | Update employee |
-| DELETE | `/employees/:id` | Admin | Delete employee |
-| POST | `/employees/:id/jobs` | Admin | Assign job to employee |
-| DELETE | `/employees/:id/jobs/:jobId` | Admin | Unassign job |
-| GET | `/timesheet?weekStart=YYYY-MM-DD` | Employee | Full week grid |
-| POST | `/timesheet` | Employee | Save/upsert week entries |
-| PUT | `/timesheet` | Employee | Update week entries (same as POST) |
-| DELETE | `/timesheet/:id` | Employee | Delete a single entry |
-| GET | `/week/:date` | Employee | Week metadata (days, dayNames, isToday flags) |
-| GET | `/report/monthly?year=&month=` | Employee | Per-job monthly hours |
-| GET | `/report/absence?start=&end=` | Admin | Absence report for date range |
-| GET | `/holidays` | Employee | List public holidays |
-| POST | `/holidays` | Admin | Add holiday |
-| DELETE | `/holidays/:id` | Admin | Remove holiday |
-| GET | `/dashboard/summary` | Admin | Today's headcount + weekly/monthly hours |
+| Role     | Employee Code | Password       |
+|----------|---------------|----------------|
+| Admin    | `ADMIN001`    | `Admin@123`    |
+| Employee | `EMP1001`     | `Employee@123` |
+| Employee | `EMP1002`     | `Employee@123` |
+| Employee | `EMP1003`     | `Employee@123` |
+
+> ⚠️ Change the admin password after first login in a production environment.
 
 ---
 
-## 6. Features Implemented
+## 📡 API Overview
 
-### Core Requirements (Assessment)
-- [x] Create Job Codes and Job Descriptions (admin)
-- [x] View current week's timesheet
-- [x] Enter hours per day (per job per date)
-- [x] Save timesheet (POST/PUT upsert)
-- [x] Edit previously saved entries
-- [x] Calculate total weekly hours
-- [x] Navigate to previous/next week
-- [x] Load saved data from backend
-- [x] Validate daily hours do not exceed 24
+All routes are prefixed with the backend base URL (default: `http://localhost:4000`).  
+Protected routes require the `Authorization: Bearer <token>` header.
 
-### Bonus Features
-- [x] **Authentication** — JWT + server-side sessions, login/logout/change-password
-- [x] **Admin module** — employee management, job management, dashboard
-- [x] **Dark mode** — system-adaptive via Material 3 theme
-- [x] **Monthly report** — per-job hour breakdown with Excel export
-- [x] **Absence tracking** — flags past working days with no logged hours
-- [x] **Public holidays** — admin-managed; excluded from absence detection
-- [x] **Docker** — `docker compose up --build` runs both services
-- [x] **Unit tests** — backend (node:test) + Flutter (flutter test)
-- [x] **Clean architecture** — feature-first, layered, no god files
-- [x] **Reusable widgets** — `PageHeader`, `LoadingView`, `ErrorView`, `EmptyView`, `AppTextField`, `PrimaryButton`
-- [x] **Error handling** — global error middleware, Dio interceptors, user-facing error views
-- [x] **Responsive UI** — sidebar on wide screens, drawer on narrow
+| Method | Endpoint                  | Auth     | Description                        |
+|--------|---------------------------|----------|------------------------------------|
+| POST   | `/auth/login`             | Public   | Login and receive JWT token        |
+| POST   | `/auth/logout`            | Required | Invalidate current session         |
+| POST   | `/auth/change-password`   | Required | Change logged-in user's password   |
+| GET    | `/auth/me`                | Required | Get current user profile           |
+| GET    | `/employees`              | Admin    | List all employees                 |
+| POST   | `/employees`              | Admin    | Create a new employee              |
+| PUT    | `/employees/:id`          | Admin    | Update employee details            |
+| GET    | `/jobs`                   | Required | List all active jobs               |
+| POST   | `/jobs`                   | Admin    | Create a new job                   |
+| GET    | `/timesheet`              | Required | Get timesheet for a given week     |
+| POST   | `/timesheet`              | Required | Save / upsert weekly timesheet     |
+| GET    | `/week`                   | Required | Get current week boundaries        |
+| GET    | `/report`                 | Required | Get monthly hours report           |
+| GET    | `/holidays`               | Required | List all holidays                  |
+| POST   | `/holidays`               | Admin    | Add a public holiday               |
+| DELETE | `/holidays/:id`           | Admin    | Remove a holiday                   |
+| GET    | `/dashboard`              | Admin    | Get admin dashboard summary stats  |
 
 ---
 
-## 7. Assumptions
+## 🗄️ Database Schema
 
-- `PUT /timesheet` and `POST /timesheet` are treated as identical full-week upserts (the spec listed both without distinguishing semantics).
-- Employees cannot add arbitrary jobs to their timesheet — they pick from jobs an admin has assigned to them (matches the dropdown-style job picker in the UI).
-- Absence detection covers only *past working weekdays* (no weekends, no public holidays, not today, not future).
-- Monthly report omits jobs with zero hours for the selected month.
-- Roles are binary: `admin` or `employee`. No granular permissions.
-- Present/Absent on the admin dashboard is based on **login sessions** (who has logged into the app today), not on whether timesheet hours have been submitted yet.
+The SQLite database consists of the following tables:
+
+```
+employees         — Employee accounts with roles (admin / employee)
+jobs              — Job codes and descriptions
+employee_jobs     — Many-to-many: which jobs each employee is assigned
+timesheets        — One record per employee per week (week_start_date)
+timesheet_entries — Daily hour entries per job per timesheet
+holidays          — Public holiday dates
+sessions          — Active JWT sessions with expiry tracking
+```
+
+Key constraints:
+- An employee can only have **one timesheet per week**.
+- A timesheet entry is unique on `(timesheet_id, job_id, entry_date)` — saving re-runs an upsert.
+- Hours per entry are validated between `0` and `24`.
+- Sessions are soft-invalidated on logout (`is_active = 0`).
