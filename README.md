@@ -1,4 +1,4 @@
-# 🗓️ HBT Timesheet Management System
+# 🗓️ Timesheet Management System
 
 A full-stack **Timesheet Management Application** built for HBT Group (HBT Engineering Pvt. Limited), enabling employees to log weekly work hours against assigned jobs and allowing admins to manage employees, jobs, holidays, and generate reports.
 
